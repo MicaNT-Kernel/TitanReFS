@@ -631,6 +631,166 @@ public:
         return Status::Success;
     }
 
+    /**
+     * @brief Query file metadata record by path.
+     */
+    bool getFileRecord(std::wstring_view path, RefsFileRecord& outRec) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!mounted_) return false;
+        std::wstring canon = canonicalizePath(path);
+        auto it = records_.find(canon);
+        if (it == records_.end()) return false;
+        outRec = it->second;
+        return true;
+    }
+
+    /**
+     * @brief Enumerate children records of a directory.
+     */
+    bool listDirectory(std::wstring_view path, std::vector<RefsFileRecord>& outRecords) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!mounted_) return false;
+        std::wstring canon = canonicalizePath(path);
+        auto it = records_.find(canon);
+        if (it == records_.end() || !it->second.isDirectory) return false;
+        outRecords.clear();
+        for (const auto& childName : it->second.childNames) {
+            auto cIt = records_.find(childName);
+            if (cIt != records_.end()) {
+                outRecords.push_back(cIt->second);
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @brief Check if file or directory exists.
+     */
+    bool fileExists(std::wstring_view path) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!mounted_) return false;
+        std::wstring canon = canonicalizePath(path);
+        return records_.find(canon) != records_.end();
+    }
+
+    /**
+     * @brief Rename or move a file/directory.
+     */
+    Status renameFile(std::wstring_view oldPath, std::wstring_view newPath, bool replaceIfExists) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!mounted_) return Status::VolumeNotMounted;
+
+        std::wstring oldCanon = canonicalizePath(oldPath);
+        std::wstring newCanon = canonicalizePath(newPath);
+
+        auto it = records_.find(oldCanon);
+        if (it == records_.end()) return Status::NoSuchFile;
+
+        auto destIt = records_.find(newCanon);
+        if (destIt != records_.end()) {
+            if (!replaceIfExists) return Status::ObjectNameCollision;
+            if (destIt->second.isDirectory) return Status::FileIsADirectory;
+            // Remove old dest from parent
+            std::wstring oldDestParent = getParentPath(newCanon);
+            auto pIt = records_.find(oldDestParent);
+            if (pIt != records_.end()) {
+                std::erase(pIt->second.childNames, newCanon);
+            }
+            records_.erase(destIt);
+        }
+
+        // Remove from old parent
+        std::wstring oldParent = getParentPath(oldCanon);
+        auto oldPIt = records_.find(oldParent);
+        if (oldPIt != records_.end()) {
+            std::erase(oldPIt->second.childNames, oldCanon);
+        }
+
+        // Move record
+        RefsFileRecord rec = std::move(it->second);
+        records_.erase(it);
+        rec.fileName = newCanon;
+
+        // If directory, update all recursive child prefixes
+        if (rec.isDirectory) {
+            std::wstring oldPrefix = oldCanon + L"\\";
+            std::wstring newPrefix = newCanon + L"\\";
+            std::vector<std::pair<std::wstring, RefsFileRecord>> childrenToMove;
+            for (auto subIt = records_.begin(); subIt != records_.end();) {
+                if (subIt->first.starts_with(oldPrefix)) {
+                    std::wstring subNewName = newPrefix + subIt->first.substr(oldPrefix.size());
+                    RefsFileRecord subRec = std::move(subIt->second);
+                    subRec.fileName = subNewName;
+                    childrenToMove.push_back({subNewName, std::move(subRec)});
+                    subIt = records_.erase(subIt);
+                } else {
+                    ++subIt;
+                }
+            }
+            for (auto& [n, r] : childrenToMove) {
+                records_[n] = std::move(r);
+            }
+        }
+
+        // Add to new parent
+        std::wstring newParent = getParentPath(newCanon);
+        auto newPIt = records_.find(newParent);
+        if (newPIt != records_.end() && newPIt->second.isDirectory) {
+            newPIt->second.childNames.push_back(newCanon);
+        }
+
+        records_[newCanon] = std::move(rec);
+        return Status::Success;
+    }
+
+    /**
+     * @brief Truncate or extend file size.
+     */
+    Status setFileSize(std::wstring_view path, uint64_t newSize) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!mounted_) return Status::VolumeNotMounted;
+
+        std::wstring canon = canonicalizePath(path);
+        auto it = records_.find(canon);
+        if (it == records_.end()) return Status::NoSuchFile;
+        if (it->second.isDirectory) return Status::FileIsADirectory;
+
+        it->second.data.resize(newSize, 0);
+        it->second.size = newSize;
+        it->second.allocatedSize = ((newSize + clusterSize_ - 1) / clusterSize_) * clusterSize_;
+        it->second.dataChecksum = RefsChecksum::compute64(it->second.data.data(), it->second.data.size());
+        return Status::Success;
+    }
+
+    /**
+     * @brief Set file attributes and toggle integrity streams.
+     */
+    Status setFileAttributes(std::wstring_view path, uint32_t attributes) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!mounted_) return Status::VolumeNotMounted;
+
+        std::wstring canon = canonicalizePath(path);
+        auto it = records_.find(canon);
+        if (it == records_.end()) return Status::NoSuchFile;
+
+        it->second.attributes = attributes;
+        it->second.integrityStream = (attributes & FILE_ATTR_INTEGRITY_STREAM) != 0;
+        return Status::Success;
+    }
+
+    [[nodiscard]] const std::wstring& getVolumeLabel() const noexcept {
+        return volumeLabel_;
+    }
+
+    void setVolumeLabel(std::wstring_view label) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        volumeLabel_ = label;
+    }
+
+    [[nodiscard]] std::shared_ptr<IBlockDevice> getDevice() const noexcept {
+        return device_;
+    }
+
 private:
     static std::wstring canonicalizePath(std::wstring_view path) {
         std::wstring s(path);

@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -39,6 +41,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Configure CMake (Windows Clang)
         if: runner.os == 'Windows'
@@ -53,9 +57,26 @@ jobs:
       - name: Run Tests (Windows)
         if: runner.os == 'Windows'
         run: |
+          ctest --test-dir build --output-on-failure
           .\build\titanrefs_tests.exe
           .\build\titanrefs_format.exe test_vol.img --size 64
           .\build\titanrefs_check.exe test_vol.img
+          .\build\titanrefs_mount.exe
+          .\build\titanrefs_svc.exe --help
+
+      - name: Package Distribution (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cpack --config build/CPackConfig.cmake -B build/dist
+
+      - name: Upload Installer Artifacts
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: TitanReFS-v1.0.0-win64
+          path: |
+            build/titanrefs_setup.exe
+            build/dist/*.zip
 
       - name: Configure CMake (Linux GCC)
         if: runner.os == 'Linux'
@@ -71,6 +92,7 @@ jobs:
       - name: Run Tests (Linux)
         if: runner.os == 'Linux'
         run: |
+          ctest --test-dir build --output-on-failure
           ./build/titanrefs_tests
           ./build/titanrefs_format test_vol.img --size 64
           ./build/titanrefs_check test_vol.img

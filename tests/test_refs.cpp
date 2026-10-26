@@ -1,4 +1,5 @@
 #include "titanrefs/refs.hpp"
+#include "titanrefs/compression.hpp"
 #include <iostream>
 #include <cassert>
 #include <vector>
@@ -12,6 +13,8 @@
             std::exit(1); \
         } \
     } while (0)
+
+#define ASSERT_FALSE(cond, msg) ASSERT_TRUE(!(cond), msg)
 
 #define ASSERT_EQ(a, b, msg) \
     do { \
@@ -156,6 +159,74 @@ void Test_ReFS_Directory_Lifecycle() {
     std::cout << "    [PASS] Directory lifecycle and recursive removal verified\n";
 }
 
+void Test_ReFS_Extended_File_Ops() {
+    std::cout << "[*] Running Test_ReFS_Extended_File_Ops...\n";
+    auto dev = std::make_shared<titanrefs::MemoryBlockDevice>("RamDisk", 16384, 4096);
+    titanrefs::RefsFileSystem fs;
+    fs.format(*dev, 65536, L"EXT_TEST");
+
+    fs.createDirectory(L"\\FolderA");
+    fs.createFile(L"\\FolderA\\original.txt", titanrefs::FILE_ATTR_ARCHIVE, 128);
+
+    // List directory
+    std::vector<titanrefs::RefsFileRecord> records;
+    ASSERT_TRUE(fs.listDirectory(L"\\FolderA", records), "listDirectory must succeed");
+    ASSERT_EQ(records.size(), 1, "FolderA must have 1 file");
+
+    // Rename file
+    auto st = fs.renameFile(L"\\FolderA\\original.txt", L"\\FolderA\\renamed.txt", false);
+    ASSERT_TRUE(titanrefs::IsSuccess(st), "renameFile must succeed");
+    ASSERT_TRUE(fs.fileExists(L"\\FolderA\\renamed.txt"), "renamed.txt must exist");
+    ASSERT_FALSE(fs.fileExists(L"\\FolderA\\original.txt"), "original.txt must not exist");
+
+    // Resize file
+    st = fs.setFileSize(L"\\FolderA\\renamed.txt", 256);
+    ASSERT_TRUE(titanrefs::IsSuccess(st), "setFileSize must succeed");
+    titanrefs::RefsFileRecord rec;
+    ASSERT_TRUE(fs.getFileRecord(L"\\FolderA\\renamed.txt", rec), "getFileRecord must succeed");
+    ASSERT_EQ(rec.size, 256, "file size must be 256");
+
+    // Set attributes
+    st = fs.setFileAttributes(L"\\FolderA\\renamed.txt", titanrefs::FILE_ATTR_READONLY | titanrefs::FILE_ATTR_INTEGRITY_STREAM);
+    ASSERT_TRUE(titanrefs::IsSuccess(st), "setFileAttributes must succeed");
+    ASSERT_TRUE(fs.getFileRecord(L"\\FolderA\\renamed.txt", rec), "getFileRecord must succeed");
+    ASSERT_TRUE(rec.integrityStream, "integrity stream must be enabled");
+
+    std::cout << "    [PASS] Extended operations (list, rename, resize, attributes) verified\n";
+}
+
+void Test_Compression_LZ4_And_RLE() {
+    std::cout << "[*] Running Test_Compression_LZ4_And_RLE...\n";
+    // 1. Test RLE on all-zero block
+    std::vector<uint8_t> zeros(65536, 0);
+    std::vector<uint8_t> rleCompressed;
+    size_t rleSz = titanrefs::CompressionEngine::CompressRLE(zeros, rleCompressed);
+    ASSERT_EQ(rleSz, 9u, "All-zero RLE block must compress to 9 bytes");
+
+    std::vector<uint8_t> rleDecomp(65536, 0xFF);
+    bool ok = titanrefs::CompressionEngine::DecompressRLE(rleCompressed, rleDecomp);
+    ASSERT_TRUE(ok, "RLE decompression must succeed");
+    ASSERT_TRUE(titanrefs::CompressionEngine::IsAllZero(rleDecomp), "Decompressed RLE block must be all zeros");
+
+    // 2. Test LZ4 on repetitive text data
+    std::string sample = "TitanReFS clean-room native ReFS v3.12 filesystem engine for Windows NT! ";
+    std::vector<uint8_t> uncompressed;
+    for (int i = 0; i < 200; ++i) {
+        uncompressed.insert(uncompressed.end(), sample.begin(), sample.end());
+    }
+
+    std::vector<uint8_t> lz4Compressed;
+    size_t cSz = titanrefs::CompressionEngine::CompressLZ4(uncompressed, lz4Compressed);
+    ASSERT_TRUE(cSz > 0 && cSz < uncompressed.size() / 5, "LZ4 compression on repetitive data must achieve >80% reduction");
+
+    std::vector<uint8_t> lz4Decomp(uncompressed.size(), 0);
+    ok = titanrefs::CompressionEngine::DecompressLZ4(lz4Compressed, lz4Decomp);
+    ASSERT_TRUE(ok, "LZ4 decompression must succeed");
+    ASSERT_TRUE(lz4Decomp == uncompressed, "Decompressed data must match original uncompressed data exactly");
+
+    std::cout << "    [PASS] Clean-room LZ4 and RLE compression verified\n";
+}
+
 int main() {
     std::cout << "========================================================\n"
               << "TitanReFS Clean-Room Verification Suite (v3.12)\n"
@@ -166,6 +237,8 @@ int main() {
     Test_ReFS_File_IO_And_IntegrityStreams();
     Test_ReFS_Block_Cloning();
     Test_ReFS_Directory_Lifecycle();
+    Test_ReFS_Extended_File_Ops();
+    Test_Compression_LZ4_And_RLE();
 
     std::cout << "========================================================\n"
               << "[+] All TitanReFS unit tests passed successfully (100% Green)\n"

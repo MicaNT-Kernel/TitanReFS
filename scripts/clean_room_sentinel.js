@@ -125,7 +125,7 @@ function getDiff() {
     } catch {
         console.warn('[Sentinel] Could not get git diff, inspecting all tracked source files...');
         let allCode = '';
-        const dirs = ['include', 'kernel', 'tools'];
+        const dirs = ['include', 'kernel', 'tools', 'src'];
         for (const dir of dirs) {
             const fullDir = path.resolve(__dirname, '..', dir);
             if (fs.existsSync(fullDir)) {
