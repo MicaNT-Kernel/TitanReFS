@@ -1,0 +1,13 @@
+build/
+bin/
+*.exe
+*.obj
+*.o
+*.pdb
+*.ilk
+*.sys
+.vs/
+.vscode/
+*.user
+*.suo
+compile_commands.json
