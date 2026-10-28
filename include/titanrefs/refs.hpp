@@ -186,7 +186,7 @@ public:
     Status format(
         IBlockDevice& dev,
         uint32_t clusterSize = REFS_DEFAULT_CLUSTER_SIZE,
-        std::wstring_view volumeLabel = L"TITAN_REFS"
+        std::wstring_view volumeLabel = L"Resilient Volume"
     ) {
         std::lock_guard<std::mutex> lock(mutex_);
         const uint64_t secSize = dev.getBlockSize();
@@ -821,7 +821,7 @@ private:
     uint64_t freeClusters_{0};
     uint64_t volumeSerialNumber_{0x8E21F4A0B9C371D5ULL};
     uint16_t volumeFlags_{0};
-    std::wstring volumeLabel_{L"TITAN_REFS"};
+    std::wstring volumeLabel_{L"Resilient Volume"};
     uint64_t nextFileId_{0x600};
     std::unordered_map<std::wstring, RefsFileRecord> records_;
 };

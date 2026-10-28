@@ -8,7 +8,7 @@ void printUsage() {
               << "Usage: titanrefs_format <target_image_or_drive> [options]\n\n"
               << "Options:\n"
               << "  --cluster <size>   Cluster size in bytes (default: 65536 / 64KB)\n"
-              << "  --label <name>     Volume label (default: TITAN_REFS)\n"
+              << "  --label <name>     Volume label (default: Resilient Volume)\n"
               << "  --size <MB>        Size in megabytes for new image files (default: 64)\n\n"
               << "Example:\n"
               << "  titanrefs_format disk.img --size 128 --label MyStorage\n";
@@ -22,7 +22,7 @@ int main(int argc, char* argv[]) {
 
     std::string target = argv[1];
     uint32_t clusterSize = 65536;
-    std::wstring label = L"TITAN_REFS";
+    std::wstring label = L"Resilient Volume";
     uint64_t sizeMb = 64;
 
     for (int i = 2; i < argc; ++i) {

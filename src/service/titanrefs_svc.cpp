@@ -131,7 +131,7 @@ public:
         auto st = fs->mount(dev);
         if (!IsSuccess(st)) {
             // Auto format if not yet initialized
-            st = fs->format(*dev, REFS_DEFAULT_CLUSTER_SIZE, L"TITAN_REFS");
+            st = fs->format(*dev, REFS_DEFAULT_CLUSTER_SIZE, L"Resilient Volume");
             if (!IsSuccess(st)) {
                 err = "Failed to mount or initialize ReFS volume.";
                 return -1;

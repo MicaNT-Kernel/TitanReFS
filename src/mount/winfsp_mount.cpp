@@ -29,7 +29,7 @@ int main(int argc, char* argv[]) {
         std::cout << "Usage: titanrefs_mount <image_path_or_device> <drive_letter:> [options]\n\n";
         std::cout << "Options:\n";
         std::cout << "  --format          Format image as clean ReFS v3.12 volume before mounting\n";
-        std::cout << "  --label <name>    Set volume label (default: TITAN_REFS)\n";
+        std::cout << "  --label <name>    Set volume label (default: Resilient Volume)\n";
         std::cout << "  --size <MB>       Backing file size in megabytes if created (default: 256)\n\n";
         std::cout << "Examples:\n";
         std::cout << "  titanrefs_mount refs_disk.raw R:\n";
@@ -41,7 +41,7 @@ int main(int argc, char* argv[]) {
     std::string devicePath;
     std::string driveLetter;
     bool doFormat = false;
-    std::wstring volumeLabel = L"TITAN_REFS";
+    std::wstring volumeLabel = L"Resilient Volume";
     uint64_t diskSizeMB = 256;
 
     for (int i = 1; i < argc; ++i) {
